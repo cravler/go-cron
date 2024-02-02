@@ -11,6 +11,11 @@ BUILD_DIR=${BUILD_DIR:=.build}
 VERSION=${VERSION:=0.x}
 ARCHIVE=NO
 
+ARCH="${GOARCH}"
+if [ "arm" = "${ARCH}" ]; then
+    ARCH="arm${GOARM}"
+fi
+
 for i in "$@"; do
 case $i in
     --archive)
@@ -23,7 +28,8 @@ case $i in
 esac
 done
 
-DIR="${BUILD_DIR}/${GOOS}/${GOARCH}"
+ARCH_DIR="${GOOS}/${ARCH}"
+DIR="${BUILD_DIR}/${ARCH_DIR}"
 mkdir -p "${DIR}"
 
 FILE="cron"
@@ -38,20 +44,30 @@ fi
 
 PACKAGE="cmd/cron/main.go"
 
-if [ "linux" = "${GOOS}" ]; then
-    CGO_ENABLED=0 go build -a -installsuffix cgo -o "${DIR}/${FILE}" -ldflags "-X main.version=${VERSION}-${SHA}" ${PACKAGE}
-else
-    go build -o "${DIR}/${FILE}" -ldflags "-X main.version=${VERSION}-${SHA}" ${PACKAGE}
-fi
+CGO_ENABLED=0 go build -o "${DIR}/${FILE}" -ldflags "-X main.version=${VERSION}-${SHA}" ${PACKAGE}
 
-md5sum --tag "${DIR}/${FILE}" > "${DIR}/md5"
+md5_sum() {
+    local IN_FILE=${1}
+    local OUT_FILE=${2}
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        md5 "${IN_FILE}" > "${OUT_FILE}"
+    else
+        md5sum --tag "${IN_FILE}" > "${OUT_FILE}"
+    fi
+}
+
+cd "${BUILD_DIR}"
+md5_sum "${ARCH_DIR}/${FILE}" "${ARCH_DIR}/md5"
+cd "${WORKDIR}"
 
 if [ "YES" = "${ARCHIVE}" ]; then
     cd "${DIR}"
     cp "${WORKDIR}/LICENSE" ./
     cp "${WORKDIR}/README.md" ./
-    TAR_FILE="${WORKDIR}/${BUILD_DIR}/cron_${GOOS}_${GOARCH}.tar.gz"
-    tar -czf "${TAR_FILE}" *
-    md5sum --tag "${TAR_FILE}" > "${TAR_FILE}.md5"
+    TAR_FILE="cron_${GOOS}_${ARCH}.tar.gz"
+    tar -czf "${WORKDIR}/${BUILD_DIR}/${TAR_FILE}" *
+    cd "${WORKDIR}/${BUILD_DIR}"
+    md5_sum "${TAR_FILE}" "${TAR_FILE}.md5"
     rm -rf "${WORKDIR}/$( dirname "${DIR}" )"
 fi
